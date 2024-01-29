@@ -15,9 +15,9 @@ template <typename T> using Vec = std::vector<T>;
 template <typename...Args> using Var = std::variant<Args...>;
 
 [[noreturn]] void panic(usz, const char *, const char *,...);
-#define PANIC(fmt, ...) panic(__LINE__, __FILE__, fmt, __VA_ARGS__);
+#define PANIC(fmt, ...) panic(__LINE__, __FILE__, fmt, __VA_ARGS__)
 
-template <typename T> std::string generate(T);
+template <typename T> std::string generate([[maybe_unused]] T);
 
 enum class Linkage {
     Private, Internal, AvailableExternally,
@@ -47,8 +47,8 @@ enum class CallingConvention {
 };
 
 template <> std::string generate<Linkage>(Linkage);
-template <> std::string generate<PreemptionSpecifier>(PreemptionSpecifier);
-template <> std::string generate<Visibility>(Visibility);
+template <> std::string generate<PreemptionSpecifier>([[maybe_unused]] PreemptionSpecifier);
+template <> std::string generate<Visibility>([[maybe_unused]] Visibility);
 template <> std::string generate<DLLStorageClass>(DLLStorageClass);
 template <> std::string generate<ThreadLocal>(ThreadLocal);
 template <> std::string generate<CodeModel>(CodeModel);
@@ -105,13 +105,13 @@ struct Alloca {
 struct Load {
     bool volatile_{false};
     ::LLVM::Type value_type;
-    ::LLVM::Type point_type; Constant point;
+    ::LLVM::Type point_type; Constant point{};
     Opt<usz> alignment{None};
 };
 struct Store {
     bool volatile_{false};
-    ::LLVM::Type value_type; Constant value;
-    ::LLVM::Type point_type; Constant point;
+    ::LLVM::Type value_type; Constant value{};
+    ::LLVM::Type point_type; Constant point{};
     Opt<usz> alignment{None};
 };
 struct GetElementPtr {
@@ -120,26 +120,32 @@ struct GetElementPtr {
     // <result> = getelementptr <ty>, <N x ptr> <ptrval>, [inrange] <vector index type> <idx>
     Type type;
     Type ptr_type;
-    Constant ptr_value;
+    Constant ptr_value{};
     // TODO: vector index (???)
 };
 struct Call {
     // <result> = [tail | musttail | notail ] call [fast-math flags] [cconv] [ret attrs] [addrspace(<num>)]
     //            <ty>|<fnty> <fnptrval>(<function args>) [fn attrs] [ operand bundles ]
     enum class TailCall { Tail, MustTail, NoTail };
+    struct Argument {
+        Type type;
+        Constant value{};
+    };
 
     Opt<TailCall> tail{None};
     // TODO: fast-math flags
     Opt<CallingConvention> calling_convention{None};
     // TODO: ret attrs (WHAT THE FUCK IS A RETURN ATTRIBUTE)
-    Opt<usz> addr_space{None};
+    Opt<usz> addrspace{None};
     Type return_type;
     // TODO: fnty (???)
     std::string name;
-    Vec<FunctionParameter> arguments{};
+    Vec<Argument> arguments{};
     // TODO: fn attrs
     // TODO: operand bundles
 };
+
+template <> std::string generate<Call::TailCall>(Call::TailCall);
 
 // https://llvm.org/docs/LangRef.html#instruction-reference
 struct Instruction {
@@ -156,7 +162,7 @@ struct Instruction {
         ExtractElement, InsertElement, ShuffleVector,
         // Aggregate Operations
         ExtractValue, InsertValue,
-        // Memery access and Adressing Operations
+        // Memory access and Addressing Operations
         Alloca, Load, Store, Fence, Cmpxchg, AtomicRmw, GetElementPtr,
         // Conversion Operations
         Trunc, Zext, Sext, Fptrunc, Fpext, Fptoui, Fptosi, Uitofp, Sitofp, Ptrtoint, Inttoptr, Bitcast, Addrspacecast,
@@ -166,7 +172,7 @@ struct Instruction {
 
     Type type;
     Opt<std::string> name{None};
-    Var<Ret *, Alloca *, Load *, Store *> var;
+    Var<Ret *, Alloca *, Load *, Store *, GetElementPtr *, Call *> var;
 };
 
 template <> std::string generate<Instruction>(Instruction);

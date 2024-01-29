@@ -16,7 +16,7 @@ namespace LLVM {
     exit(1);
 }
 
-template <typename T> std::string generate(T t) {
+template <typename T> std::string generate([[maybe_unused]] T t) {
     PANIC("%s cannot be called for an arbitrary type", __PRETTY_FUNCTION__);
 }
 
@@ -36,12 +36,12 @@ template <> std::string generate<Linkage>(Linkage linkage) {
     }
 }
 
-template <> std::string generate<PreemptionSpecifier>(PreemptionSpecifier specifier) {
+template <> std::string generate<PreemptionSpecifier>([[maybe_unused]] PreemptionSpecifier specifier) {
     std::stringstream ss;
     return ss.str();
 }
 
-template <> std::string generate<Visibility>(Visibility visibility) {
+template <> std::string generate<Visibility>([[maybe_unused]] Visibility visibility) {
     std::stringstream ss;
     return ss.str();
 }
@@ -153,15 +153,45 @@ template <> std::string generate<Instruction>(Instruction inst) {
             ss << generate<Type>(store.point_type) << " " << generate<Constant>(store.point);
             if (store.alignment.has_value()) ss << ", align " << store.alignment.value();
         } break;
+        case Instruction::Type::GetElementPtr: {
+            // %msg_ptr = getelementptr [13 x i8], [13 x i8]* @msg, i32 0, i32 0
+            auto gep = *std::get<GetElementPtr *>(inst.var);
+            ss << "getelementptr " << generate<Type>(gep.type);
+            ss << ", " << generate<Type>(gep.ptr_type) << " " << generate<Constant>(gep.ptr_value);
+            ss << ", i32 0, i32 0"; // this is a temporary solution to missing fields.
+        } break;
+        case Instruction::Type::Call: {
+            auto call = *std::get<Call *>(inst.var);
+            if (call.tail.has_value()) ss << generate<Call::TailCall>(call.tail.value()) << " ";
+            ss << "call ";
+            if (call.calling_convention.has_value()) ss << generate<CallingConvention>(call.calling_convention.value()) << " ";
+            if (call.addrspace.has_value()) ss << "addrspace(" << call.addrspace.value() << ") ";
+            ss << generate<Type>(call.return_type) << " @" << call.name << "(";
+            for (int i = 0; i < call.arguments.size(); i++) {
+                Call::Argument argument = call.arguments.at(i);
+                ss << generate<Type>(argument.type) << " " << generate<Constant>(argument.value);
+                if (i < call.arguments.size() - 1)
+                    ss << ", ";
+            }
+            ss << ")";
+        } break;
         default: PANIC("TODO!", "");
     }
     return ss.str();
 }
 
+template <> std::string generate<Call::TailCall>(Call::TailCall tc) {
+    switch (tc) {
+        case Call::TailCall::Tail: return "tail";
+        case Call::TailCall::MustTail: return "musttail";
+        case Call::TailCall::NoTail: return "notail";
+    }
+}
+
 template <> std::string generate<BasicBlock>(BasicBlock bb) {
     std::stringstream ss;
     ss << bb.name << ":\n";
-    for (auto instruction : bb.instructions)
+    for (const auto& instruction : bb.instructions)
         ss << "    " << generate<Instruction>(instruction) << "\n";
     return ss.str();
 }
@@ -230,7 +260,7 @@ template <> std::string generate<Function>(Function fn) {
 
     ss << " {\n";
 
-    for (auto bb : fn.body)
+    for (const auto& bb : fn.body)
         ss << generate<BasicBlock>(bb);
 
     ss << "}\n";

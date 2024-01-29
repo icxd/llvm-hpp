@@ -1,9 +1,10 @@
 #include <iostream>
 #include <sstream>
+#include <cstdio>
 #include "llvm.hpp"
 using namespace LLVM;
 
-int main(void) {
+int main() {
     std::stringstream ss;
 
     GlobalVariable my_variable{
@@ -15,7 +16,7 @@ int main(void) {
                 .kind = Type::Kind::Integer,
                 .size = 8,
             },
-            .size = 14,
+            .size = 13,
         },
         .initializer_constant = Constant{
             .type = Constant::Type::String,
@@ -44,7 +45,52 @@ int main(void) {
                 .name = "entry",
                 .instructions = {
                     Instruction{
+                        .type = Instruction::Type::GetElementPtr,
+                        .name = "msg_ptr",
+                        .var = new GetElementPtr{
+                            .type = Type{
+                                .kind = Type::Kind::Array,
+                                .inner = new Type{
+                                    .kind = Type::Kind::Integer,
+                                    .size = 8,
+                                },
+                                .size = 13,
+                            },
+                            .ptr_type = Type {
+                                .kind = Type::Kind::Pointer,
+                                .inner = new Type{
+                                    .kind = Type::Kind::Array,
+                                    .inner = new Type{
+                                        .kind = Type::Kind::Integer,
+                                        .size = 8,
+                                    },
+                                    .size = 13,
+                                },
+                            },
+                            .ptr_value = Constant{
+                                .type = Constant::Type::GlobalVariable,
+                                .variable_name = "msg",
+                            }
+                        }
+                    },
+                    Instruction{
                         .type = Instruction::Type::Call,
+                        .var = new Call{
+                            .return_type = I32,
+                            .name = "puts",
+                            .arguments = {
+                                {Type{
+                                    .kind = Type::Kind::Pointer,
+                                    .inner = new Type{
+                                        .kind = Type::Kind::Integer,
+                                        .size = 8,
+                                    }
+                                }, Constant{
+                                    .type = Constant::Type::LocalVariable,
+                                    .variable_name = "msg_ptr"
+                                }}
+                            }
+                        }
                     },
                     Instruction{
                         .type = Instruction::Type::Ret,
@@ -66,6 +112,10 @@ int main(void) {
     ss << generate<ExternalFunction>(puts) << "\n";
 
     std::cout << ss.str() << "\n";
+
+    FILE *fp = fopen("hello.ll", "w");
+    fprintf(fp, "%s", ss.str().c_str());
+    fclose(fp);
 
     return 0;
 }
