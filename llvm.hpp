@@ -3,6 +3,7 @@
 
 #include <string>
 #include <optional>
+#include <utility>
 #include <vector>
 #include <variant>
 
@@ -67,9 +68,17 @@ struct Type {
     Kind kind;
     Type *inner{nullptr}; // For Pointer, Vector, and Array
     usz size{0}; // For Vector, Array, and Integer
-};
 
-inline constexpr Type I32 = Type{ .kind = Type::Kind::Integer, .size = 32 };
+    static Type *Integer(usz integer_size = 32) {
+        return new Type{ .kind = Kind::Integer, .size = integer_size };
+    }
+    static Type *Array(Type *inner, usz size) {
+        return new Type { .kind = Kind::Array, .inner = inner, .size = size };
+    }
+    static Type *Pointer(Type *inner) {
+        return new Type { .kind = Kind::Pointer, .inner = inner };
+    }
+};
 
 template <> std::string generate<Type>(Type);
 
@@ -84,6 +93,19 @@ struct Constant {
         const char *string_value;
         const char *variable_name;
     };
+
+    static Constant Integer(long long value) {
+        return Constant{.type = Type::Integer, .int_value = value};
+    }
+    static Constant String(const std::string& value) {
+        return Constant{.type = Type::String, .string_value = value.c_str()};
+    }
+    static Constant LocalVariable(const std::string& name) {
+        return Constant{.type = Type::LocalVariable, .variable_name = name.c_str()};
+    }
+    static Constant GlobalVariable(const std::string& name) {
+        return Constant{.type = Type::GlobalVariable, .variable_name = name.c_str()};
+    }
 };
 
 template <> std::string generate<Constant>(Constant);
@@ -94,58 +116,75 @@ struct FunctionParameter {
     Opt<std::string> name{None};
 };
 
-struct Ret { ::LLVM::Type type; Opt<Constant> value{None}; };
-struct Alloca {
-    bool inalloca{false};
-    ::LLVM::Type type;
-    usz elements{1};
-    Opt<usz> alignment{None};
-    Opt<usz> addrspace{None};
-};
-struct Load {
-    bool volatile_{false};
-    ::LLVM::Type value_type;
-    ::LLVM::Type point_type; Constant point{};
-    Opt<usz> alignment{None};
-};
-struct Store {
-    bool volatile_{false};
-    ::LLVM::Type value_type; Constant value{};
-    ::LLVM::Type point_type; Constant point{};
-    Opt<usz> alignment{None};
-};
-struct GetElementPtr {
-    // TODO: <result> = getelementptr <ty>, ptr <ptrval>{, [inrange] <ty> <idx>}*
-    // TODO: <result> = getelementptr inbounds <ty>, ptr <ptrval>{, [inrange] <ty> <idx>}*
-    // <result> = getelementptr <ty>, <N x ptr> <ptrval>, [inrange] <vector index type> <idx>
-    Type type;
-    Type ptr_type;
-    Constant ptr_value{};
-    // TODO: vector index (???)
-};
-struct Call {
-    // <result> = [tail | musttail | notail ] call [fast-math flags] [cconv] [ret attrs] [addrspace(<num>)]
-    //            <ty>|<fnty> <fnptrval>(<function args>) [fn attrs] [ operand bundles ]
-    enum class TailCall { Tail, MustTail, NoTail };
-    struct Argument {
-        Type type;
+namespace InstructionDetails {
+
+    struct Ret {
+        ::LLVM::Type type;
+        Opt<Constant> value{None};
+    };
+    struct Alloca {
+        bool inalloca{false};
+        ::LLVM::Type type;
+        usz elements{1};
+        Opt<usz> alignment{None};
+        Opt<usz> addrspace{None};
+    };
+    struct Load {
+        bool volatile_{false};
+        ::LLVM::Type value_type;
+        ::LLVM::Type point_type;
+        Constant point{};
+        Opt<usz> alignment{None};
+    };
+    struct Store {
+        bool volatile_{false};
+        ::LLVM::Type value_type;
         Constant value{};
+        ::LLVM::Type point_type;
+        Constant point{};
+        Opt<usz> alignment{None};
+    };
+    struct GetElementPtr {
+        // TODO: <result> = getelementptr <ty>, ptr <ptrval>{, [inrange] <ty> <idx>}*
+        // TODO: <result> = getelementptr inbounds <ty>, ptr <ptrval>{, [inrange] <ty> <idx>}*
+        // <result> = getelementptr <ty>, <N x ptr> <ptrval>, [inrange] <vector index type> <idx>
+        Type type;
+        Type ptr_type;
+        Constant ptr_value{};
+        // TODO: vector index (???)
+    };
+    struct Call {
+        // <result> = [tail | musttail | notail ] call [fast-math flags] [cconv] [ret attrs] [addrspace(<num>)]
+        //            <ty>|<fnty> <fnptrval>(<function args>) [fn attrs] [ operand bundles ]
+        enum class TailCall {
+            Tail, MustTail, NoTail
+        };
+        struct Argument {
+            Type type;
+            Constant value{};
+        };
+
+        Opt<TailCall> tail{None};
+        // TODO: fast-math flags
+        Opt<CallingConvention> calling_convention{None};
+        // TODO: ret attrs (WHAT THE FUCK IS A RETURN ATTRIBUTE)
+        Opt<usz> addrspace{None};
+        Type return_type;
+        // TODO: fnty (???)
+        std::string name;
+        Vec<Argument> arguments{};
+        // TODO: fn attrs
+        // TODO: operand bundles
+
+        Call *add_argument(Argument argument) {
+            this->arguments.push_back(argument);
+            return this;
+        }
     };
 
-    Opt<TailCall> tail{None};
-    // TODO: fast-math flags
-    Opt<CallingConvention> calling_convention{None};
-    // TODO: ret attrs (WHAT THE FUCK IS A RETURN ATTRIBUTE)
-    Opt<usz> addrspace{None};
-    Type return_type;
-    // TODO: fnty (???)
-    std::string name;
-    Vec<Argument> arguments{};
-    // TODO: fn attrs
-    // TODO: operand bundles
-};
+} // namespace InstructionDetails
 
-template <> std::string generate<Call::TailCall>(Call::TailCall);
+template <> std::string generate<InstructionDetails::Call::TailCall>(InstructionDetails::Call::TailCall);
 
 // https://llvm.org/docs/LangRef.html#instruction-reference
 struct Instruction {
@@ -172,7 +211,44 @@ struct Instruction {
 
     Type type;
     Opt<std::string> name{None};
-    Var<Ret *, Alloca *, Load *, Store *, GetElementPtr *, Call *> var;
+    Var<
+            InstructionDetails::Ret *,
+            InstructionDetails::Alloca *,
+            InstructionDetails::Load *,
+            InstructionDetails::Store *,
+            InstructionDetails::GetElementPtr *,
+            InstructionDetails::Call *> var;
+
+    static Instruction from(InstructionDetails::Ret *var) { return Instruction{.type = Type::Ret, .var = var}; }
+    static Instruction from(InstructionDetails::Call *var) { return Instruction{.type = Type::Call, .var = var}; }
+    static Instruction from(InstructionDetails::GetElementPtr *var) { return Instruction{.type = Type::GetElementPtr, .var = var}; }
+
+    static InstructionDetails::Ret *Ret(::LLVM::Type return_type) {
+        return new InstructionDetails::Ret{return_type};
+    }
+    static InstructionDetails::Ret *Ret(::LLVM::Type return_type, Constant value) {
+        return new InstructionDetails::Ret{return_type, std::make_optional(value)};
+    }
+
+    static InstructionDetails::Call *Call(::LLVM::Type return_type, const std::string& name) {
+        return new InstructionDetails::Call{
+            .return_type = return_type,
+            .name = name,
+        };
+    }
+
+    static InstructionDetails::GetElementPtr *GetElementPtr(::LLVM::Type type, LLVM::Type ptr_type, Constant ptr_value) {
+        return new InstructionDetails::GetElementPtr{
+            .type = type,
+            .ptr_type = ptr_type,
+            .ptr_value = ptr_value,
+        };
+    }
+
+    Instruction set_name(const std::string& name) {
+        this->name = std::make_optional(name);
+        return *this;
+    }
 };
 
 template <> std::string generate<Instruction>(Instruction);
@@ -180,6 +256,15 @@ template <> std::string generate<Instruction>(Instruction);
 struct BasicBlock {
     std::string name;
     Vec<Instruction> instructions;
+
+    static BasicBlock create(const std::string& name) {
+        return BasicBlock{name};
+    }
+
+    BasicBlock add_instruction(const Instruction& instruction) {
+        this->instructions.push_back(instruction);
+        return *this;
+    }
 };
 
 template <> std::string generate<BasicBlock>(BasicBlock);
@@ -207,6 +292,13 @@ struct GlobalVariable {
          sanitize_address_dyninit{false},
          sanitize_memtag{false};
     // TODO: metadata
+
+    static GlobalVariable create(std::string name, Type type, Constant value) {
+        return GlobalVariable{.global_var_name = std::move(name), .type = type, .initializer_constant = value};
+    }
+
+    GlobalVariable set_linkage(Linkage linkage) { this->linkage = linkage; return *this; }
+
 };
 
 template <> std::string generate<GlobalVariable>(GlobalVariable);
@@ -237,6 +329,20 @@ struct Function {
     // TODO: personality constant
     // TODO: metadata
     Vec<BasicBlock> body;
+
+    static Function create(const std::string& name, Type return_type) {
+        return Function{.return_type = return_type, .function_name = name};
+    }
+
+    Function add_parameter(const FunctionParameter& parameter) {
+        this->parameters.push_back(parameter);
+        return *this;
+    }
+
+    Function add_basic_block(const BasicBlock& bb) {
+        this->body.push_back(bb);
+        return *this;
+    }
 };
 
 template <> std::string generate<Function>(Function);
@@ -258,6 +364,15 @@ struct ExternalFunction {
     // TODO: gc (garbage collector)
     // TODO: prefix constant
     // TODO: prologue constant
+
+    static ExternalFunction create(const std::string& name, Type return_type) {
+        return ExternalFunction{.return_type = return_type, .function_name = name};
+    }
+
+    ExternalFunction add_parameter(const FunctionParameter& parameter) {
+        this->parameters.push_back(parameter);
+        return *this;
+    }
 };
 
 template <> std::string generate<ExternalFunction>(ExternalFunction);

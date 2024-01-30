@@ -124,13 +124,13 @@ template <> std::string generate<Instruction>(Instruction inst) {
         ss << "%" << inst.name.value() << " = ";
     switch (inst.type) {
         case Instruction::Type::Ret: {
-            auto ret = *std::get<Ret *>(inst.var);
+            auto ret = *std::get<InstructionDetails::Ret *>(inst.var);
             ss << "ret " << generate<Type>(ret.type);
             if (ret.value.has_value())
                 ss << " " << generate<Constant>(ret.value.value());
         } break;
         case Instruction::Type::Alloca: {
-            auto alloca = *std::get<Alloca *>(inst.var);
+            auto alloca = *std::get<InstructionDetails::Alloca *>(inst.var);
             ss << "alloca ";
             if (alloca.inalloca) ss << "inalloca ";
             ss << generate<Type>(alloca.type);
@@ -140,14 +140,14 @@ template <> std::string generate<Instruction>(Instruction inst) {
             if (alloca.addrspace.has_value()) ss << ", addrspace(" << alloca.addrspace.value() << ")";
         } break;
         case Instruction::Type::Load: {
-            auto load = *std::get<Load *>(inst.var);
+            auto load = *std::get<InstructionDetails::Load *>(inst.var);
             ss << "load " << (load.volatile_ ? "volatile " : "");
             ss << generate<Type>(load.value_type) << ", ";
             ss << generate<Type>(load.point_type) << " " << generate<Constant>(load.point);
             if (load.alignment.has_value()) ss << ", align " << load.alignment.value();
         } break;
         case Instruction::Type::Store: {
-            auto store = *std::get<Store *>(inst.var);
+            auto store = *std::get<InstructionDetails::Store *>(inst.var);
             ss << "store " << (store.volatile_ ? "volatile " : "");
             ss << generate<Type>(store.value_type) << " " << generate<Constant>(store.value) << ", ";
             ss << generate<Type>(store.point_type) << " " << generate<Constant>(store.point);
@@ -155,20 +155,20 @@ template <> std::string generate<Instruction>(Instruction inst) {
         } break;
         case Instruction::Type::GetElementPtr: {
             // %msg_ptr = getelementptr [13 x i8], [13 x i8]* @msg, i32 0, i32 0
-            auto gep = *std::get<GetElementPtr *>(inst.var);
+            auto gep = *std::get<InstructionDetails::GetElementPtr *>(inst.var);
             ss << "getelementptr " << generate<Type>(gep.type);
             ss << ", " << generate<Type>(gep.ptr_type) << " " << generate<Constant>(gep.ptr_value);
             ss << ", i32 0, i32 0"; // this is a temporary solution to missing fields.
         } break;
         case Instruction::Type::Call: {
-            auto call = *std::get<Call *>(inst.var);
-            if (call.tail.has_value()) ss << generate<Call::TailCall>(call.tail.value()) << " ";
+            auto call = *std::get<InstructionDetails::Call *>(inst.var);
+            if (call.tail.has_value()) ss << generate<InstructionDetails::Call::TailCall>(call.tail.value()) << " ";
             ss << "call ";
             if (call.calling_convention.has_value()) ss << generate<CallingConvention>(call.calling_convention.value()) << " ";
             if (call.addrspace.has_value()) ss << "addrspace(" << call.addrspace.value() << ") ";
             ss << generate<Type>(call.return_type) << " @" << call.name << "(";
             for (int i = 0; i < call.arguments.size(); i++) {
-                Call::Argument argument = call.arguments.at(i);
+                InstructionDetails::Call::Argument argument = call.arguments.at(i);
                 ss << generate<Type>(argument.type) << " " << generate<Constant>(argument.value);
                 if (i < call.arguments.size() - 1)
                     ss << ", ";
@@ -180,11 +180,11 @@ template <> std::string generate<Instruction>(Instruction inst) {
     return ss.str();
 }
 
-template <> std::string generate<Call::TailCall>(Call::TailCall tc) {
+template <> std::string generate<InstructionDetails::Call::TailCall>(InstructionDetails::Call::TailCall tc) {
     switch (tc) {
-        case Call::TailCall::Tail: return "tail";
-        case Call::TailCall::MustTail: return "musttail";
-        case Call::TailCall::NoTail: return "notail";
+        case InstructionDetails::Call::TailCall::Tail: return "tail";
+        case InstructionDetails::Call::TailCall::MustTail: return "musttail";
+        case InstructionDetails::Call::TailCall::NoTail: return "notail";
     }
 }
 
